@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAGIC BUSINESS SA — CRM Clients</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>window.supabase||document.write('<script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"><\/script>')</script>
+<style>
+:root{--o:#ff7900;--g:#f3f4f6;--t:#222;--b:#e5e7eb}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--g);color:var(--t)}
+.hide{display:none!important}
+#login{max-width:340px;margin:12vh auto;background:#fff;padding:24px;border-radius:12px;box-shadow:0 2px 10px #0001}
+.logo{display:inline-block;background:var(--o);color:#fff;font-weight:700;padding:8px 12px;border-radius:8px}
+input,select,textarea{width:100%;padding:10px;margin:4px 0 10px;border:1px solid var(--b);border-radius:8px;font:inherit}
+button{background:var(--o);color:#fff;border:0;padding:10px 14px;border-radius:8px;font:inherit;cursor:pointer}
+button.alt{background:#fff;color:var(--t);border:1px solid var(--b)}
+#app{display:flex;min-height:100vh}
+nav{width:210px;background:#fff;border-right:1px solid var(--b);padding:14px;display:flex;flex-direction:column;gap:6px}
+nav a{padding:10px;border-radius:8px;cursor:pointer;color:inherit;text-decoration:none}nav a.on{background:var(--o);color:#fff}
+main{flex:1;padding:18px;min-width:0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.card{background:#fff;border-radius:12px;padding:14px}.card b{font-size:28px;color:var(--o);display:block}
+.tw{overflow-x:auto;background:#fff;border-radius:12px;margin-top:12px}
+table{border-collapse:collapse;width:100%}th,td{padding:9px;text-align:left;border-bottom:1px solid var(--b);white-space:nowrap}
+.warn{background:#fff7ed;border:1px solid var(--o);padding:10px;border-radius:8px;margin-top:12px}
+.err{color:#b91c1c}
+@media print{nav,button,input,select,textarea,.warn,.noprint{display:none!important}#app{display:block}main{padding:0}body{background:#fff}body[data-p="hist"] #m_l,body[data-p="hist"] #m_form,body[data-p="hist"] #m_q,body[data-p="dest"] #m_hwrap{display:none!important}table{font-size:11px}td{white-space:normal!important}}
+@media(max-width:700px){#app{flex-direction:column}nav{width:100%;flex-direction:row;overflow-x:auto}}
+</style></head><body>
+<div id="cfg" class="hide warn" style="margin:20px">Configuration requise : clé Supabase manquante.</div>
+
+<div id="login">
+  <span class="logo">MB</span> <b>MAGIC BUSINESS SA</b>
+  <p>Espace administrateur privé</p>
+  <input id="em" type="email" placeholder="E-mail" autocomplete="username">
+  <input id="pw" type="password" placeholder="Mot de passe" autocomplete="current-password">
+  <button onclick="signIn()" style="width:100%">Se connecter</button>
+  <p><a href="#" onclick="reset();return false">Mot de passe oublié ?</a></p>
+  <p id="lerr" class="err"></p>
+</div>
+
+<div id="app" class="hide">
+  <nav><div><span class="logo">MB</span></div>
+    <a data-v="dash" class="on">Tableau de bord</a><a data-v="clients">Clients</a>
+    <a data-v="comm">Communications</a><a data-v="reponses">Réponses <span id="bdg"></span></a><a data-v="agences">Agences</a><a data-v="rapports">Rapports</a>
+    <a onclick="sb.auth.signOut()" style="margin-top:auto">Déconnexion</a></nav>
+  <main id="main"></main>
+</div>
+
+<script>
+const SUPABASE_URL = "https://helzcoeztvagdewzgxrr.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_-T_VFZRqNsusXUqjrbBVcw_Uw4TY-_Y";
+let sb, agences = [];
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+if (!window.supabase) { $("#lerr").textContent = "Impossible de charger la bibliothèque (Internet faible ou bloqueur de publicités). Rechargez la page."; }
+else if (!SUPABASE_ANON_KEY) { $("#cfg").classList.remove("hide"); $("#login").classList.add("hide"); }
+else {
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  sb.auth.onAuthStateChange((_e, s) => { setTimeout(() => { s ? enter() : leave(); }, 0); });
+  sb.auth.getSession().then(({data}) => data.session ? enter() : leave());
+}
+async function signIn() {
+  if (!sb) return $("#lerr").textContent = "Bibliothèque non chargée. Rechargez la page.";
+  $("#lerr").textContent = "Connexion en cours…";
+  try {
+    const {error} = await sb.auth.signInWithPassword({email: $("#em").value.trim().toLowerCase(), password: $("#pw").value});
+    $("#lerr").textContent = error ? "Connexion refusée : " + error.message : "";
+  } catch (e) { $("#lerr").textContent = "Erreur réseau : " + e.message; }
+}
+async function reset() {
+  if (!$("#em").value) return $("#lerr").textContent = "Saisissez d'abord votre e-mail.";
+  const {error} = await sb.auth.resetPasswordForEmail($("#em").value);
+  $("#lerr").textContent = error ? error.message : "E-mail de récupération envoyé.";
+}
+async function enter() { try { await enter2(); } catch (e) { $("#login").classList.remove("hide"); $("#lerr").textContent = "Erreur : " + e.message; } }
+async function enter2() {
+  const {data: a, error: ae} = await sb.from("crm_admins").select("user_id").maybeSingle();
+  if (!a) { $("#app").classList.add("hide"); $("#login").classList.remove("hide"); $("#lerr").textContent = "Ce compte n'a pas accès au CRM. " + (ae ? ae.message : ""); return; }
+  $("#login").classList.add("hide"); $("#app").classList.remove("hide");
+  const {data} = await sb.from("crm_agences").select("id,nom"); agences = data || [];
+  const {data: sv} = await sb.from("crm_services").select("id,nom"); services = sv || []; badge(); ecoute();
+  show("dash");
+}
+function leave() { $("#app").classList.add("hide"); if (sb) $("#login").classList.remove("hide"); }
+document.querySelectorAll("nav a[data-v]").forEach(a => a.onclick = () => show(a.dataset.v));
+function show(v) {
+  document.querySelectorAll("nav a[data-v]").forEach(a => a.classList.toggle("on", a.dataset.v === v));
+  ({dash, clients, comm, reponses, agences: vueAgences, rapports})[v]();
+}
+
+async function count(table, f) {
+  let q = sb.from(table).select("*", {count: "exact", head: true}); if (f) q = f(q);
+  const {count: n, error} = await q; return error ? "—" : n;
+}
+async function dash() {
+  $("#main").innerHTML = "<h2>Tableau de bord CRM</h2><p>Chargement…</p>";
+  const today = new Date().toISOString().slice(0, 10), week = new Date(Date.now() - 7*864e5).toISOString();
+  const [tot, nouv, att, ench, rel, ret] = await Promise.all([
+    count("crm_clients", q => q.eq("archive", false)),
+    count("crm_clients", q => q.gte("created_at", week)),
+    count("crm_demandes", q => q.in("statut", ["nouveau","a_contacter","attente_client","attente_externe"])),
+    count("crm_demandes", q => q.eq("statut", "en_cours")),
+    count("crm_clients", q => q.eq("prochaine_relance", today)),
+    count("crm_clients", q => q.lt("prochaine_relance", today))]);
+  const c = (l, n) => `<div class="card"><b>${n}</b>${l}</div>`;
+  $("#main").innerHTML = `<h2>Tableau de bord CRM</h2><div class="cards">
+    ${c("Clients actifs", tot)}${c("Nouveaux (7 jours)", nouv)}${c("Demandes en attente", att)}
+    ${c("Demandes en cours", ench)}${c("Appels à faire aujourd'hui", rel)}${c("Relances en retard", ret)}</div>
+    <p class="warn">Indicateurs calculés sur les données réelles. Graphiques, filtres et statistiques par canal : prochaine étape.</p>`;
+}
+
+async function clients() {
+  $("#main").innerHTML = `<h2>Clients</h2>
+   <div style="display:flex;gap:8px"><input id="q" placeholder="Rechercher nom ou numéro"><button onclick="listC()">Rechercher</button><button class="alt" onclick="formC()">+ Ajouter</button></div>
+   <div id="form"></div><div class="tw" id="list"></div>`;
+  listC();
+}
+async function listC() {
+  const t = ($("#q")?.value || "").trim().replace(/[,()%]/g, "");
+  let q = sb.from("crm_clients").select("*, crm_agences(nom)").eq("archive", false).order("created_at", {ascending: false}).limit(100);
+  if (t) q = q.or(`nom.ilike.%${t}%,prenom.ilike.%${t}%,telephone.ilike.%${t}%`);
+  const {data, error} = await q;
+  if (error) return $("#list").innerHTML = `<p class="err" style="padding:12px">${esc(error.message)}</p>`;
+  $("#list").innerHTML = data.length ? `<table><tr><th>Nom</th><th>Téléphone</th><th>Ville / commune</th><th>Agence</th><th>Statut</th><th></th></tr>` +
+    data.map(c => `<tr><td>${esc(c.nom)} ${esc(c.prenom)}</td><td>${esc(c.telephone)}</td><td>${esc(c.ville)} ${esc(c.commune)}</td><td>${esc(c.crm_agences?.nom)}</td><td>${esc(c.statut)}</td><td><button onclick="fiche('${c.id}')">Ouvrir</button> <button class="alt" onclick="arch('${c.id}')">Archiver</button></td></tr>`).join("") + "</table>"
+    : "<p style='padding:12px'>Aucun client enregistré.</p>";
+}
+function formC() {
+  $("#form").innerHTML = `<div class="card" style="margin-top:12px">
+   <input id="n" placeholder="Nom *"><input id="p" placeholder="Prénom"><input id="t" placeholder="Numéro principal *" inputmode="tel">
+   <input id="v" placeholder="Ville"><input id="co" placeholder="Commune"><input id="qu" placeholder="Quartier">
+   <select id="ag"><option value="">Agence de suivi</option>${agences.map(a => `<option value="${a.id}">${esc(a.nom)}</option>`).join("")}</select>
+   <textarea id="no" placeholder="Notes internes"></textarea>
+   <label><input id="cs" type="checkbox" style="width:auto"> Consentement aux communications</label><br><br>
+   <button onclick="saveC()">Enregistrer</button> <span id="fe" class="err"></span></div>`;
+}
+async function saveC() {
+  const tel = $("#t").value.replace(/[\s.-]/g, ""), nom = $("#n").value.trim();
+  if (!nom || !/^\+?\d{8,15}$/.test(tel)) return $("#fe").textContent = "Nom et numéro valide requis.";
+  const {data: dup} = await sb.from("crm_clients").select("id,nom").eq("telephone", tel).limit(1);
+  if (dup?.length && !confirm(`Doublon possible : ${dup[0].nom} a déjà ce numéro. Enregistrer quand même ?`)) return;
+  const {error} = await sb.from("crm_clients").insert({nom, prenom: $("#p").value, telephone: tel, ville: $("#v").value, commune: $("#co").value,
+    quartier: $("#qu").value, agence_id: $("#ag").value || null, notes: $("#no").value, consentement: $("#cs").checked});
+  if (error) return $("#fe").textContent = error.message;
+  $("#form").innerHTML = ""; listC();
+}
+async function arch(id) { if (confirm("Archiver ce client ?")) { await sb.from("crm_clients").update({archive: true}).eq("id", id); listC(); } }
+
+let services = [];
+const STAT = ["nouveau","a_contacter","contacte","interesse","attente_client","en_cours","attente_externe","traite","cloture","annule"];
+const PRIO = ["basse","normale","haute","urgente"];
+const RES = ["Joint","Injoignable","À rappeler","Intéressé","Pas intéressé"];
+const F = {nom:"Nom *", prenom:"Prénom", telephone:"Téléphone principal *", telephone2:"Téléphone secondaire", ville:"Ville", commune:"Commune", quartier:"Quartier"};
+const opt = (a, s) => a.map(x => `<option${x === s ? " selected" : ""}>${x}</option>`).join("");
+async function fiche(id) {
+  const [rc, rd, ra] = await Promise.all([
+    sb.from("crm_clients").select("*").eq("id", id).single(),
+    sb.from("crm_demandes").select("*, crm_services(nom)").eq("client_id", id).order("created_at", {ascending: false}),
+    sb.from("crm_appels").select("*").eq("client_id", id).order("created_at", {ascending: false})]);
+  const c = rc.data, d = rd.data || [], a = ra.data || [];
+  if (!c) return $("#main").innerHTML = `<p class="err">${esc(rc.error?.message)}</p>`;
+  $("#main").innerHTML = `<button class="alt" onclick="show('clients')">← Clients</button>
+  <h2>${esc(c.nom)} ${esc(c.prenom)}</h2>
+  <div class="card"><h3>Informations</h3>
+   ${Object.entries(F).map(([k, l]) => `<label>${l}</label><input id="f_${k}" value="${esc(c[k])}">`).join("")}
+   <label>Statut</label><select id="f_statut">${opt(STAT, c.statut)}</select>
+   <label>Agence de suivi</label><select id="f_ag"><option value="">—</option>${agences.map(a => `<option value="${a.id}"${a.id === c.agence_id ? " selected" : ""}>${esc(a.nom)}</option>`).join("")}</select>
+   <label>Prochaine relance</label><input id="f_rel" type="date" value="${c.prochaine_relance || ""}">
+   <label>Notes internes</label><textarea id="f_notes">${esc(c.notes)}</textarea>
+   <button onclick="saveF('${id}')">Enregistrer</button> <span id="fm"></span></div>
+  <div class="card" style="margin-top:12px"><h3>Demandes</h3>
+   ${d.map(x => `<p>${esc(x.crm_services?.nom)} · ${esc(x.priorite)} · <select onchange="setD('${x.id}',this.value)">${opt(STAT, x.statut)}</select></p>`).join("") || "<p>Aucune demande.</p>"}
+   <select id="d_s">${services.map(v => `<option value="${v.id}">${esc(v.nom)}</option>`).join("")}</select>
+   <select id="d_p">${opt(PRIO, "normale")}</select><input id="d_n" placeholder="Notes">
+   <button onclick="addD('${id}','${c.agence_id || ""}')">+ Demande</button></div>
+  <div class="card" style="margin-top:12px"><h3>Appels</h3>
+   <select id="a_r">${opt(RES)}</select><input id="a_c" placeholder="Commentaire">
+   <label>Prochaine relance</label><input id="a_d" type="date">
+   <button onclick="addA('${id}')">Enregistrer l'appel</button>
+   ${a.map(x => `<p>${new Date(x.created_at).toLocaleString("fr-FR")} · ${esc(x.resultat)} · ${esc(x.commentaire)}</p>`).join("")}</div>`;
+}
+async function saveF(id) {
+  const o = {statut: $("#f_statut").value, agence_id: $("#f_ag").value || null, prochaine_relance: $("#f_rel").value || null, notes: $("#f_notes").value};
+  Object.keys(F).forEach(k => o[k] = $("#f_" + k).value.trim());
+  if (!o.nom || !o.telephone) return $("#fm").textContent = "Nom et téléphone requis.";
+  const {error} = await sb.from("crm_clients").update(o).eq("id", id);
+  $("#fm").textContent = error ? error.message : "Enregistré ✓";
+}
+async function setD(id, v) { const {error} = await sb.from("crm_demandes").update({statut: v}).eq("id", id); if (error) alert(error.message); }
+async function addD(cid, ag) {
+  const {error} = await sb.from("crm_demandes").insert({client_id: cid, service_id: $("#d_s").value || null, agence_id: ag || null, priorite: $("#d_p").value, notes: $("#d_n").value});
+  error ? alert(error.message) : fiche(cid);
+}
+async function addA(cid) {
+  const rel = $("#a_d").value || null;
+  const {error} = await sb.from("crm_appels").insert({client_id: cid, resultat: $("#a_r").value, commentaire: $("#a_c").value, prochaine_relance: rel});
+  if (error) return alert(error.message);
+  await sb.from("crm_clients").update({dernier_contact: new Date().toISOString(), prochaine_relance: rel}).eq("id", cid);
+  fiche(cid);
+}
+
+const MODELES = {
+  "Fibre Orange": "Bonjour {prenom}, MAGIC BUSINESS, partenaire Orange, vous propose la Fibre Orange. Passez à l'agence {agence} (lundi au samedi).",
+  "Téléphone à crédit": "Bonjour {prenom}, MAGIC BUSINESS, partenaire Orange, vous informe de l'offre Téléphone à crédit. Passez à l'agence {agence} (lundi au samedi) pour les conditions.",
+  "Flybox": "Bonjour {prenom}, MAGIC BUSINESS, partenaire Orange, vous propose la Flybox. Passez à l'agence {agence} (lundi au samedi).",
+  "Easybox": "Bonjour {prenom}, MAGIC BUSINESS, partenaire Orange, vous propose l'Easybox. Passez à l'agence {agence} (lundi au samedi).",
+  "Libre": ""
+};
+let dest = [];
+const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+const waUrl = (num, t) => mobile ? `https://wa.me/${tel(num)}?text=${encodeURIComponent(t)}` : `https://web.whatsapp.com/send?phone=${tel(num)}&text=${encodeURIComponent(t)}`;
+const noSms = n => alert("Un ordinateur ne peut pas envoyer de SMS. Le message est copié : envoyez-le depuis un téléphone au " + n + ", ou choisissez WhatsApp.");
+Object.keys(MODELES).forEach(k => { if (MODELES[k]) MODELES[k] += " Écrivez-nous sur ce WhatsApp ou appelez l'agence {agence} au {telephone}."; });
+const tel = n => { let d = String(n || "").replace(/\D/g, ""); if (d.startsWith("00")) return d.slice(2); return d.startsWith("225") ? d : "225" + d; };
+const msgFor = c => {
+  const p = c.crm_agences?.telephone;
+  let t = $("#m_t").value;
+  t = p ? t.replaceAll("{telephone}", p) : t.replace(/ ou appelez l'agence \{agence\} au \{telephone\}/g, "").replace(/ ?[^.!?]*\{telephone\}[^.!?]*[.!?]?/g, "");
+  return t.replaceAll("sur ce WhatsApp", $("#m_c").value === "SMS" ? "par SMS" : "sur ce WhatsApp").replaceAll("{prenom}", c.prenom || c.nom).replaceAll("{nom}", c.nom).replaceAll("{agence}", c.crm_agences?.nom || "notre agence");
+};
+function comm() {
+  $("#main").innerHTML = `<h2>Centre de communication</h2>
+  <div class="warn">Mode manuel : le CRM ouvre WhatsApp ou l'application SMS avec le message prêt, et vous appuyez sur Envoyer. Les statuts « livré » et la réception automatique des réponses demandent les API officielles (non configurées). Seuls les clients ayant donné leur consentement sont listés.</div>
+  <div class="card" id="m_form" style="margin-top:12px">
+   <select id="m_c"><option>WhatsApp</option><option>SMS</option></select>
+   <select id="m_a"><option value="">Toutes les agences</option>${agences.map(a => `<option value="${a.id}">${esc(a.nom)}</option>`).join("")}</select>
+   <input id="m_v" placeholder="Ville (facultatif)"><input id="m_co" placeholder="Commune (facultatif)">
+   <select id="m_s"><option value="">Tous les statuts</option>${STAT.map(x => `<option>${x}</option>`).join("")}</select>
+   <select id="m_m" onchange="$('#m_t').value=MODELES[this.value]">${Object.keys(MODELES).map(k => `<option>${k}</option>`).join("")}</select>
+   <textarea id="m_t" rows="4">${esc(MODELES["Fibre Orange"])}</textarea>
+   <button onclick="prep()">Voir les destinataires</button></div>
+  <div id="m_q"></div><div id="m_l"></div><div id="m_hwrap"><h3>Historique des envois</h3>
+  <div class="noprint" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">Du <input id="h_d1" type="date" style="width:auto"> au <input id="h_d2" type="date" style="width:auto"><button class="alt" onclick="hist()">Filtrer</button><button onclick="imprimer('hist')">Imprimer</button><button class="alt" onclick="toutEnvoye()">Tout marquer envoyé</button></div>
+  <div class="tw" id="m_h"></div></div>`;
+  hist();
+}
+async function prep() {
+  let q = sb.from("crm_clients").select("*, crm_agences(nom,telephone)").eq("archive", false).eq("consentement", true).limit(200);
+  if ($("#m_a").value) q = q.eq("agence_id", $("#m_a").value);
+  const v = $("#m_v").value.trim().replace(/[,()%]/g, ""), co = $("#m_co").value.trim().replace(/[,()%]/g, "");
+  if (v) q = q.ilike("ville", `%${v}%`);
+  if (co) q = q.ilike("commune", `%${co}%`);
+  if ($("#m_s").value) q = q.eq("statut", $("#m_s").value);
+  const {data, error} = await q;
+  if (error) return $("#m_l").innerHTML = `<p class="err">${esc(error.message)}</p>`;
+  dest = data;
+  $("#m_l").innerHTML = `<h3>${data.length} destinataire(s) avec consentement</h3>
+    <div class="noprint" style="display:flex;gap:8px;flex-wrap:wrap"><button class="alt" onclick="toutSel(true)">Tout sélectionner</button><button class="alt" onclick="toutSel(false)">Tout désélectionner</button><button onclick="startQueue()">Envoyer à la sélection</button><button class="alt" onclick="imprimer('dest')">Imprimer la liste</button></div>
+    <div class="tw"><table>` + data.map((c, i) => `<tr><td><input type="checkbox" class="sel" data-i="${i}" checked style="width:auto;margin:0"></td><td>${esc(c.nom)} ${esc(c.prenom)}<br>${esc(c.telephone)}</td><td style="white-space:normal;min-width:220px">${esc(msgFor(c))}</td><td><button onclick="envoyer(${i})">Envoyer</button></td></tr>`).join("") + "</table></div>";
+}
+function envoyer(i) {
+  const c = dest[i], t = msgFor(c), canal = $("#m_c").value;
+  if (!t.trim()) return alert("Le message est vide.");
+  sb.from("crm_messages").insert({client_id: c.id, canal: canal.toLowerCase(), sens: "sortant", contenu: t, statut: "en_attente"}).then(({error}) => { if (error) alert(error.message); hist(); });
+  const url = canal === "WhatsApp" ? waUrl(c.telephone, t) : `sms:${c.telephone}?&body=${encodeURIComponent(t)}`;
+  if (canal === "WhatsApp") window.open(url, "wa"); else if (mobile) location.href = url; else { navigator.clipboard?.writeText(t); noSms(c.telephone); }
+}
+async function hist() {
+  let q = sb.from("crm_messages").select("*, crm_clients(nom,prenom,telephone)").order("created_at", {ascending: false}).limit(300);
+  const d1 = $("#h_d1")?.value, d2 = $("#h_d2")?.value;
+  if (d1) q = q.gte("created_at", d1 + "T00:00:00");
+  if (d2) q = q.lte("created_at", d2 + "T23:59:59");
+  const {data} = await q;
+  const el = $("#m_h"); if (!el) return;
+  el.innerHTML = data?.length ? `<table><tr><th>Date</th><th>Client</th><th>Téléphone</th><th>Canal</th><th>Message</th><th>Statut</th><th class="noprint"></th></tr>` + data.map(m => `<tr><td>${new Date(m.created_at).toLocaleString("fr-FR")}</td><td>${esc(m.crm_clients?.nom)} ${esc(m.crm_clients?.prenom)}</td><td>${esc(m.crm_clients?.telephone)}</td><td>${esc(m.canal)}</td><td style="white-space:normal;min-width:200px">${esc(m.contenu)}</td><td>${esc(m.statut)}</td><td class="noprint">${m.statut === "en_attente" ? `<button class="alt" onclick="envoye('${m.id}','${m.client_id}')">Marquer envoyé</button> <button class="alt" onclick="echec('${m.id}')">Échoué</button>` : ""}</td></tr>`).join("") + "</table>" : "<p style='padding:12px'>Aucun message.</p>";
+}
+async function envoye(id, cid) { await sb.from("crm_messages").update({statut: "envoye"}).eq("id", id); await sb.from("crm_clients").update({dernier_contact: new Date().toISOString()}).eq("id", cid); hist(); }
+async function echec(id) { await sb.from("crm_messages").update({statut: "echoue"}).eq("id", id); hist(); }
+let queue = [], qi = 0;
+const sel = () => [...document.querySelectorAll(".sel")].filter(x => x.checked).map(x => +x.dataset.i);
+function toutSel(v) { document.querySelectorAll(".sel").forEach(x => x.checked = v); }
+function startQueue() {
+  queue = sel(); qi = 0;
+  if (!queue.length) return alert("Aucun client sélectionné.");
+  if (!$("#m_t").value.trim()) return alert("Le message est vide.");
+  if (confirm(`Envoyer ce message à ${queue.length} client(s), un par un ?`)) nextQ();
+}
+function nextQ() {
+  if (qi >= queue.length) { $("#m_q").innerHTML = `<div class="card" style="margin-top:12px">✓ File terminée (${queue.length}). Marquez les envois dans l'historique.</div>`; return; }
+  const c = dest[queue[qi]];
+  $("#m_q").innerHTML = `<div class="card" style="margin-top:12px"><b>${qi + 1} / ${queue.length} — ${esc(c.nom)} ${esc(c.prenom)}</b><br><br><button onclick="envoyer(${queue[qi]}); qi++; nextQ()">Ouvrir et envoyer</button> <button class="alt" onclick="qi++; nextQ()">Passer</button></div>`;
+}
+async function toutEnvoye() {
+  if (!confirm("Marquer tous les messages en attente comme envoyés ?")) return;
+  const {data} = await sb.from("crm_messages").select("id,client_id").eq("statut", "en_attente");
+  if (!data?.length) return alert("Aucun message en attente.");
+  await sb.from("crm_messages").update({statut: "envoye"}).in("id", data.map(x => x.id));
+  await sb.from("crm_clients").update({dernier_contact: new Date().toISOString()}).in("id", [...new Set(data.map(x => x.client_id))]);
+  hist();
+}
+function imprimer(z) { document.body.dataset.p = z; window.print(); }
+let repl = [], ecoutee = false;
+async function badge() {
+  const n = await count("crm_messages", q => q.eq("sens", "entrant").eq("traite", false));
+  const b = $("#bdg"); if (b) b.innerHTML = n > 0 ? `<b style="background:#dc2626;color:#fff;border-radius:10px;padding:1px 7px;font-size:12px">${n}</b>` : "";
+  document.title = (n > 0 ? `(${n}) ` : "") + "MAGIC BUSINESS SA — CRM Clients";
+}
+function toast(t) {
+  const d = document.createElement("div"); d.textContent = t;
+  d.style.cssText = "position:fixed;top:12px;right:12px;background:#ff7900;color:#fff;padding:12px 16px;border-radius:10px;z-index:9;cursor:pointer";
+  d.onclick = () => { d.remove(); show("reponses"); }; document.body.appendChild(d); setTimeout(() => d.remove(), 15000);
+}
+function ecoute() {
+  if (ecoutee) return; ecoutee = true;
+  sb.channel("reponses").on("postgres_changes", {event: "INSERT", schema: "public", table: "crm_messages"}, p => {
+    if (p.new.sens === "entrant") { toast("Nouvelle réponse client"); badge(); if ($("#rep")) listR(); }
+  }).subscribe();
+}
+async function reponses() {
+  const {data: cl} = await sb.from("crm_clients").select("id,nom,prenom,telephone").eq("archive", false).order("nom").limit(500);
+  $("#main").innerHTML = `<h2>Réponses des clients</h2>
+  <div class="warn">Les réponses arrivent automatiquement seulement quand WhatsApp Business et les SMS sont reliés par les API officielles (non configurées). En attendant, enregistrez ici une réponse reçue sur votre téléphone.</div>
+  <div class="card" style="margin-top:12px"><h3>Enregistrer une réponse reçue</h3>
+   <select id="r_c"><option value="">Choisir le client…</option>${(cl || []).map(c => `<option value="${c.id}">${esc(c.nom)} ${esc(c.prenom)} — ${esc(c.telephone)}</option>`).join("")}</select>
+   <select id="r_k"><option>whatsapp</option><option>sms</option></select>
+   <textarea id="r_t" rows="3" placeholder="Texte de la réponse du client"></textarea>
+   <button onclick="addR()">Enregistrer</button></div>
+  <div id="rep"></div>`;
+  listR();
+}
+async function listR() {
+  const {data, error} = await sb.from("crm_messages").select("*, crm_clients(nom,prenom,telephone)").eq("sens", "entrant").eq("traite", false).order("created_at", {ascending: false});
+  badge();
+  if (error) return $("#rep").innerHTML = `<p class="err">${esc(error.message)} — avez-vous lancé 03_reponses.sql ?</p>`;
+  repl = data;
+  $("#rep").innerHTML = `<h3>À traiter (${data.length})</h3>` + (data.map(m => `<div class="card" style="margin-top:10px"><b>${esc(m.crm_clients?.nom)} ${esc(m.crm_clients?.prenom)}</b> · ${esc(m.canal)} · ${new Date(m.created_at).toLocaleString("fr-FR")}<p>${esc(m.contenu)}</p>
+   <textarea id="rr_${m.id}" rows="2" placeholder="Votre réponse"></textarea>
+   <button onclick="repondre('${m.id}')">Répondre</button> <button class="alt" onclick="fiche('${m.client_id}')">Fiche</button> <button class="alt" onclick="traite('${m.id}')">Marquer traité</button></div>`).join("") || "<p>Aucune réponse à traiter.</p>");
+}
+function repondre(id) {
+  const m = repl.find(x => x.id === id), t = $("#rr_" + id).value.trim();
+  if (!t) return alert("Écrivez votre réponse.");
+  const tl = m.crm_clients?.telephone;
+  sb.from("crm_messages").insert({client_id: m.client_id, canal: m.canal, sens: "sortant", contenu: t, statut: "en_attente"}).then(({error}) => { if (error) alert(error.message); });
+  const url = m.canal === "sms" ? `sms:${tl}?&body=${encodeURIComponent(t)}` : waUrl(tl, t);
+  if (m.canal !== "sms") window.open(url, "wa"); else if (mobile) location.href = url; else { navigator.clipboard?.writeText(t); noSms(tl); }
+}
+async function traite(id) { await sb.from("crm_messages").update({traite: true}).eq("id", id); listR(); }
+async function addR() {
+  if (!$("#r_c").value || !$("#r_t").value.trim()) return alert("Choisissez un client et saisissez le texte.");
+  const {error} = await sb.from("crm_messages").insert({client_id: $("#r_c").value, canal: $("#r_k").value, sens: "entrant", contenu: $("#r_t").value.trim(), statut: "reponse_recue", traite: false});
+  if (error) return alert(error.message);
+  $("#r_t").value = ""; listR();
+}
+async function vueAgences() {
+  const {data, error} = await sb.from("crm_agences").select("*").order("nom");
+  if (error) return $("#main").innerHTML = `<p class="err">${esc(error.message)}</p>`;
+  $("#main").innerHTML = `<h2>Agences</h2><p>Le numéro de chaque agence s'affiche dans les messages envoyés à ses clients (modèles avec {telephone}).</p>` +
+    data.map(a => `<div class="card" style="margin-top:12px"><h3>${esc(a.nom)}</h3>
+   <label>Adresse</label><input id="g_a_${a.id}" value="${esc(a.adresse)}">
+   <label>Horaires</label><input id="g_h_${a.id}" value="${esc(a.horaires)}">
+   <label>Téléphone (appel et WhatsApp)</label><input id="g_t_${a.id}" value="${esc(a.telephone)}" inputmode="tel" placeholder="07 xx xx xx xx">
+   <button onclick="saveG('${a.id}')">Enregistrer</button> <span id="g_m_${a.id}"></span></div>`).join("");
+}
+async function saveG(id) {
+  const {error} = await sb.from("crm_agences").update({adresse: $("#g_a_" + id).value.trim(), horaires: $("#g_h_" + id).value.trim(), telephone: $("#g_t_" + id).value.trim()}).eq("id", id);
+  $("#g_m_" + id).textContent = error ? error.message : "Enregistré ✓";
+}
+let rapData = [], rapCols = [];
+const dt = d => d ? new Date(d).toLocaleString("fr-FR") : "";
+const cn = r => `${r.crm_clients?.nom || ""} ${r.crm_clients?.prenom || ""}`.trim();
+const RAP = {
+  clients: {l: "Clients", sel: "*, crm_agences(nom)", ag: "agence_id", cols: [["Nom", r => `${r.nom} ${r.prenom || ""}`.trim()], ["Téléphone", r => r.telephone], ["Ville", r => r.ville], ["Commune", r => r.commune], ["Quartier", r => r.quartier], ["Agence", r => r.crm_agences?.nom], ["Statut", r => r.statut], ["Consentement", r => r.consentement ? "Oui" : "Non"], ["Enregistré le", r => dt(r.created_at)]]},
+  demandes: {l: "Demandes", sel: "*, crm_clients(nom,prenom,telephone), crm_services(nom), crm_agences(nom)", ag: "agence_id", cols: [["Date", r => dt(r.created_at)], ["Client", cn], ["Téléphone", r => r.crm_clients?.telephone], ["Service", r => r.crm_services?.nom], ["Agence", r => r.crm_agences?.nom], ["Statut", r => r.statut], ["Priorité", r => r.priorite], ["Notes", r => r.notes]]},
+  messages: {l: "Communications", sel: "*, crm_clients!inner(nom,prenom,telephone,agence_id)", ag: "crm_clients.agence_id", cols: [["Date", r => dt(r.created_at)], ["Client", cn], ["Téléphone", r => r.crm_clients?.telephone], ["Canal", r => r.canal], ["Sens", r => r.sens], ["Message", r => r.contenu], ["Statut", r => r.statut]]},
+  appels: {l: "Appels", sel: "*, crm_clients!inner(nom,prenom,telephone,agence_id)", ag: "crm_clients.agence_id", cols: [["Date", r => dt(r.created_at)], ["Client", cn], ["Téléphone", r => r.crm_clients?.telephone], ["Résultat", r => r.resultat], ["Commentaire", r => r.commentaire], ["Prochaine relance", r => r.prochaine_relance]]}
+};
+function rapports() {
+  $("#main").innerHTML = `<h2>Rapports</h2>
+  <div class="card noprint">
+   <select id="p_t">${Object.entries(RAP).map(([k, v]) => `<option value="${k}">${v.l}</option>`).join("")}</select>
+   <select id="p_a"><option value="">Toutes les agences</option>${agences.map(a => `<option value="${a.id}">${esc(a.nom)}</option>`).join("")}</select>
+   Du <input id="p_d1" type="date" style="width:auto"> au <input id="p_d2" type="date" style="width:auto"><br>
+   <button onclick="genRap()">Générer</button> <button class="alt" onclick="window.print()">Imprimer / PDF</button> <button class="alt" onclick="csvRap()">Exporter Excel (CSV)</button></div>
+  <div id="p_o"></div>`;
+}
+async function genRap() {
+  const t = $("#p_t").value, R = RAP[t], ag = $("#p_a").value, d1 = $("#p_d1").value, d2 = $("#p_d2").value;
+  let q = sb.from("crm_" + t).select(R.sel).order("created_at", {ascending: false}).limit(1000);
+  if (d1) q = q.gte("created_at", d1 + "T00:00:00");
+  if (d2) q = q.lte("created_at", d2 + "T23:59:59");
+  if (ag) q = q.eq(R.ag, ag);
+  $("#p_o").innerHTML = "<p>Chargement…</p>";
+  const {data, error} = await q;
+  if (error) return $("#p_o").innerHTML = `<p class="err">${esc(error.message)}</p>`;
+  rapData = data; rapCols = R.cols;
+  const par = {}; data.forEach(r => { const n = r.crm_agences?.nom || (ag ? agences.find(a => a.id === ag)?.nom : "") || "Sans agence"; par[n] = (par[n] || 0) + 1; });
+  const resume = (t === "clients" || t === "demandes") ? `<p>Par agence : ${Object.entries(par).map(([k, v]) => `${esc(k)} ${v}`).join(" · ")}</p>` : "";
+  $("#p_o").innerHTML = `<h3>MAGIC BUSINESS SA — Rapport : ${R.l}</h3><p>Période : ${d1 || "début"} au ${d2 || "aujourd'hui"} · Édité le ${new Date().toLocaleDateString("fr-FR")} · ${data.length} ligne(s)</p>${resume}
+   <div class="tw"><table><tr>${R.cols.map(c => `<th>${c[0]}</th>`).join("")}</tr>${data.map(r => `<tr>${R.cols.map(c => `<td>${esc(c[1](r))}</td>`).join("")}</tr>`).join("")}</table></div>`;
+}
+function csvRap() {
+  if (!rapData.length) return alert("Générez d'abord un rapport.");
+  const e = v => { let x = String(v ?? ""); if (/^[=@]/.test(x)) x = "'" + x; return '"' + x.replace(/"/g, '""') + '"'; };
+  const lines = [rapCols.map(c => e(c[0])).join(";"), ...rapData.map(r => rapCols.map(c => e(c[1](r))).join(";"))];
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\uFEFF" + lines.join("\r\n")], {type: "text/csv;charset=utf-8"}));
+  a.download = `rapport-${$("#p_t").value}-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+}
+</script></body></html>
