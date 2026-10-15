@@ -201,10 +201,11 @@ async function addA(cid) {
 }
 
 const MODELES = {
-  "Fibre Orange": "Bonjour {prenom}, MAGIC BUSINESS, partenaire Orange, vous propose la Fibre Orange. Passez à l'agence {agence} (lundi au samedi).",
-  "Téléphone à crédit": "Bonjour {prenom}, MAGIC BUSINESS, partenaire Orange, vous informe de l'offre Téléphone à crédit. Passez à l'agence {agence} (lundi au samedi) pour les conditions.",
-  "Flybox": "Bonjour {prenom}, MAGIC BUSINESS, partenaire Orange, vous propose la Flybox. Passez à l'agence {agence} (lundi au samedi).",
-  "Easybox": "Bonjour {prenom}, MAGIC BUSINESS, partenaire Orange, vous propose l'Easybox. Passez à l'agence {agence} (lundi au samedi).",
+  "Fibre Orange": "Bonjour {prenom}, MAGIC BUSINESS, partenaire d'ORANGE CÔTE D'IVOIRE, vous propose la Fibre Orange. Passez à l'agence {agence} (lundi au samedi).",
+  "Téléphone à crédit": "Bonjour {prenom}, MAGIC BUSINESS, partenaire d'ORANGE CÔTE D'IVOIRE, vous informe de l'offre Téléphone à crédit. Passez à l'agence {agence} (lundi au samedi) pour les conditions.",
+  "Flybox": "Bonjour {prenom}, MAGIC BUSINESS, partenaire d'ORANGE CÔTE D'IVOIRE, vous propose la Flybox. Passez à l'agence {agence} (lundi au samedi).",
+  "Easybox": "Bonjour {prenom}, MAGIC BUSINESS, partenaire d'ORANGE CÔTE D'IVOIRE, vous propose l'Easybox. Passez à l'agence {agence} (lundi au samedi).",
+  "Promo Téléphone à crédit": "Bonjour {prenom}, MAGIC BUSINESS, partenaire d'ORANGE CÔTE D'IVOIRE, vous propose {produit} en Téléphone à crédit. Passez à l'agence {agence} (lundi au samedi) pour les conditions.",
   "Libre": ""
 };
 let dest = [];
@@ -217,7 +218,7 @@ const msgFor = c => {
   const p = c.crm_agences?.telephone;
   let t = $("#m_t").value;
   t = p ? t.replaceAll("{telephone}", p) : t.replace(/ ou appelez l'agence \{agence\} au \{telephone\}/g, "").replace(/ ?[^.!?]*\{telephone\}[^.!?]*[.!?]?/g, "");
-  return t.replaceAll("sur ce WhatsApp", $("#m_c").value === "SMS" ? "par SMS" : "sur ce WhatsApp").replaceAll("{prenom}", c.prenom || c.nom).replaceAll("{nom}", c.nom).replaceAll("{agence}", c.crm_agences?.nom || "notre agence");
+  return t.replaceAll("sur ce WhatsApp", $("#m_c").value === "SMS" ? "par SMS" : "sur ce WhatsApp").replaceAll("{prenom}", c.prenom || c.nom).replaceAll("{nom}", c.nom).replaceAll("{agence}", c.crm_agences?.nom || "notre agence").replaceAll("{produit}", $("#m_p")?.value.trim() || "un téléphone") + ($("#m_u")?.value.trim() ? "\n" + $("#m_u").value.trim() : "");
 };
 function comm() {
   $("#main").innerHTML = `<h2>Centre de communication</h2>
@@ -229,6 +230,10 @@ function comm() {
    <select id="m_s"><option value="">Tous les statuts</option>${STAT.map(x => `<option>${x}</option>`).join("")}</select>
    <select id="m_m" onchange="$('#m_t').value=MODELES[this.value]">${Object.keys(MODELES).map(k => `<option>${k}</option>`).join("")}</select>
    <textarea id="m_t" rows="4">${esc(MODELES["Fibre Orange"])}</textarea>
+   <input id="m_p" placeholder="Nom du produit (remplace {produit})">
+   <label>Image du produit (facultatif)</label><input id="m_f" type="file" accept="image/*" onchange="choixImg(this)">
+   <input id="m_u" placeholder="Ou lien de l'image (ajouté à la fin du message)">
+   <div id="m_i"></div>
    <button onclick="prep()">Voir les destinataires</button></div>
   <div id="m_q"></div><div id="m_l"></div><div id="m_hwrap"><h3>Historique des envois</h3>
   <div class="noprint" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">Du <input id="h_d1" type="date" style="width:auto"> au <input id="h_d2" type="date" style="width:auto"><button class="alt" onclick="hist()">Filtrer</button><button onclick="imprimer('hist')">Imprimer</button><button class="alt" onclick="toutEnvoye()">Tout marquer envoyé</button></div>
@@ -252,6 +257,7 @@ async function prep() {
 function envoyer(i) {
   const c = dest[i], t = msgFor(c), canal = $("#m_c").value;
   if (!t.trim()) return alert("Le message est vide.");
+  if (imgBlob && canal === "WhatsApp" && !mobile && navigator.clipboard?.write) navigator.clipboard.write([new ClipboardItem({"image/png": imgBlob})]).then(() => info("Image copiée : collez-la dans WhatsApp avec Ctrl+V")).catch(() => info("Copie de l'image impossible : joignez-la à la main."));
   sb.from("crm_messages").insert({client_id: c.id, canal: canal.toLowerCase(), sens: "sortant", contenu: t, statut: "en_attente"}).then(({error}) => { if (error) alert(error.message); hist(); });
   const url = canal === "WhatsApp" ? waUrl(c.telephone, t) : `sms:${c.telephone}?&body=${encodeURIComponent(t)}`;
   if (canal === "WhatsApp") window.open(url, "wa"); else if (mobile) location.href = url; else { navigator.clipboard?.writeText(t); noSms(c.telephone); }
@@ -267,6 +273,20 @@ async function hist() {
 }
 async function envoye(id, cid) { await sb.from("crm_messages").update({statut: "envoye"}).eq("id", id); await sb.from("crm_clients").update({dernier_contact: new Date().toISOString()}).eq("id", cid); hist(); }
 async function echec(id) { await sb.from("crm_messages").update({statut: "echoue"}).eq("id", id); hist(); }
+let imgBlob = null;
+function info(t) { const d = document.createElement("div"); d.textContent = t; d.style.cssText = "position:fixed;top:12px;right:12px;background:#222;color:#fff;padding:12px 16px;border-radius:10px;z-index:9"; document.body.appendChild(d); setTimeout(() => d.remove(), 7000); }
+function choixImg(inp) {
+  const f = inp.files[0]; imgBlob = null; $("#m_i").innerHTML = "";
+  if (!f) return;
+  const im = new Image();
+  im.onload = () => {
+    const c = document.createElement("canvas"), k = Math.min(1, 1280 / Math.max(im.width, im.height));
+    c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+    c.getContext("2d").drawImage(im, 0, 0, c.width, c.height);
+    c.toBlob(b => { imgBlob = b; $("#m_i").innerHTML = `<img src="${c.toDataURL("image/jpeg", 0.6)}" style="max-width:160px;border-radius:8px"><p>Image prête : à l'envoi, elle est copiée, puis collez-la avec Ctrl+V dans WhatsApp.</p>`; }, "image/png");
+  };
+  im.src = URL.createObjectURL(f);
+}
 let queue = [], qi = 0;
 const sel = () => [...document.querySelectorAll(".sel")].filter(x => x.checked).map(x => +x.dataset.i);
 function toutSel(v) { document.querySelectorAll(".sel").forEach(x => x.checked = v); }
